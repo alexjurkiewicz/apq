@@ -4,23 +4,23 @@ apq
 A better postqueue/mailq wrapper for human and computer consumption
 
     usage: apq.py [-h] [-j] [-y] [-c] [--reason REASON] [--recipient RECIPIENT]
-                  [--sender SENDER]
+                  [--sender SENDER] [--maxage MAXAGE] [--minage MINAGE]
     
-    Parse postfix mail queue data
+    Parse postfix mail queue.
     
     optional arguments:
       -h, --help            show this help message and exit
-      -j, --json            JSON output
-      -y, --yaml            YAML output (default)
+      -j, --json            JSON output (default)
+      -y, --yaml            YAML output
       -c, --count           Return only the count of matching items
-      --reason REASON       Return only messages with a reason matching this regex
-                            pattern
+      --reason REASON       Select messages with a reason matching this regex
       --recipient RECIPIENT
-                            Return only messages with a recipient matching this
-                            regex pattern
-      --sender SENDER       Return only messages with a sender matching this regex
-                            pattern
-
+                            Select messages with a recipient matching this regex
+      --sender SENDER       Select messages with a sender matching this regex
+      --maxage MAXAGE       Select messages younger than the given age. Format:
+                            age[{d,h,m,s}]. Defaults to seconds. eg: '3600', '1h'
+      --minage MINAGE       Select messages older than the given age. Format:
+                            age[{d,h,m,s}]. Defaults to seconds. eg: '3600', '1h'
 
 Todo
 ====
