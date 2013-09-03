@@ -91,8 +91,8 @@ def format_msgs_for_output(msgs):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Parse postfix mail queue.')
-    parser.add_argument('-y', '--yaml', action='store_true', help="YAML output (default)")
-    parser.add_argument('-j', '--json', action='store_true', help="JSON output")
+    parser.add_argument('-j', '--json', action='store_true', help="JSON output (default)")
+    parser.add_argument('-y', '--yaml', action='store_true', help="YAML output")
     parser.add_argument('-c', '--count', action='store_true', help="Return only the count of matching items")
     parser.add_argument('--reason', default=None, help="Select messages with a reason matching this regex")
     parser.add_argument('--recipient', default=None, help="Select messages with a recipient matching this regex")
@@ -121,9 +121,9 @@ if __name__ == '__main__':
 
     if args.count:
         print len(msgs)
-    elif args.json:
-        import json
-        print json.dumps(msgs)
-    else:
+    elif args.yaml:
         import yaml
         print yaml.dump(msgs)
+    else:
+        import json
+        print json.dumps(msgs)
