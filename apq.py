@@ -40,37 +40,6 @@ def parse_mailq_date(d):
     return time.mktime(t)
 
 def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, maxage=None):
-    def filter_on_msg_key(msgs, pattern, key):
-        '''Filter msgs, returning only items where key 'key' matches regex 'pattern' '''
-        r = re.compile(pattern)
-        msg_ids = filter(lambda m: re.search(r, msgs[m][key]), msgs)
-        msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
-        return msgs
-    def filter_on_msg_age(msgs, condition, age):
-        '''Filter msgs, returning only items where key 'date' meets the criteria 'age'.
-        Internal format is {+-}age{dhms} (CLI assumes '-' by default)'''
-        # Determine mode
-        if age[-1] == 's':
-            age_secs = int(age[:-1])
-        elif age[-1] == 'm':
-            age_secs = int(age[:-1]) * 60
-        elif age[-1] == 'h':
-            age_secs = int(age[:-1]) * 60 * 60
-        elif age[-1] == 'd':
-            age_secs = int(age[:-1]) * 60 * 60 * 24
-        # Create lambda
-        now = datetime.datetime.now()
-        if condition == 'minage':
-            f = lambda m: (now - datetime.datetime.fromtimestamp(msgs[m]['date'])).total_seconds() >= age_secs
-        elif condition == 'maxage':
-            f = lambda m: (now - datetime.datetime.fromtimestamp(msgs[m]['date'])).total_seconds() <= age_secs
-        else:
-            assert False
-        # Filter
-        msg_ids = filter(f, msgs)
-        msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
-        return msgs
-
     if reason:
         msgs = filter_on_msg_key(msgs, reason, 'reason')
     if sender:
@@ -81,6 +50,37 @@ def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, max
         msgs = filter_on_msg_age(msgs, 'minage', minage)
     if maxage:
         msgs = filter_on_msg_age(msgs, 'maxage', maxage)
+    return msgs
+
+def filter_on_msg_key(msgs, pattern, key):
+    '''Filter msgs, returning only items where key 'key' matches regex 'pattern'.'''
+    r = re.compile(pattern)
+    msg_ids = filter(lambda m: re.search(r, msgs[m][key]), msgs)
+    msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
+    return msgs
+
+def filter_on_msg_age(msgs, condition, age):
+    '''Filter msgs, returning only items where key 'date' meets 'condition' maxage/minage checking against 'age'.'''
+    # Determine mode
+    if age[-1] == 's':
+        age_secs = int(age[:-1])
+    elif age[-1] == 'm':
+        age_secs = int(age[:-1]) * 60
+    elif age[-1] == 'h':
+        age_secs = int(age[:-1]) * 60 * 60
+    elif age[-1] == 'd':
+        age_secs = int(age[:-1]) * 60 * 60 * 24
+    # Create lambda
+    now = datetime.datetime.now()
+    if condition == 'minage':
+        f = lambda m: (now - datetime.datetime.fromtimestamp(msgs[m]['date'])).total_seconds() >= age_secs
+    elif condition == 'maxage':
+        f = lambda m: (now - datetime.datetime.fromtimestamp(msgs[m]['date'])).total_seconds() <= age_secs
+    else:
+        assert False
+    # Filter
+    msg_ids = filter(f, msgs)
+    msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
     return msgs
 
 def format_msgs_for_output(msgs):
