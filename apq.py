@@ -89,7 +89,7 @@ def format_msgs_for_output(msgs):
         msgs[msgid]['date'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(msgs[msgid]['date']))
     return msgs
 
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Parse postfix mail queue.')
     parser.add_argument('-j', '--json', action='store_true', help="JSON output (default)")
     parser.add_argument('-y', '--yaml', action='store_true', help="YAML output")
@@ -100,6 +100,7 @@ if __name__ == '__main__':
     parser.add_argument('--maxage', default=None, help="Select messages younger than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: '3600', '1h'")
     parser.add_argument('--minage', default=None, help="Select messages older than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: '3600', '1h'")
 
+    # Parse
     args = parser.parse_args()
 
     # Validate
@@ -119,6 +120,7 @@ if __name__ == '__main__':
     msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender, minage=args.minage, maxage=args.maxage)
     msgs = format_msgs_for_output(msgs)
 
+    # Output
     if args.count:
         print len(msgs)
     elif args.yaml:
@@ -127,3 +129,6 @@ if __name__ == '__main__':
     else:
         import json
         print json.dumps(msgs)
+
+if __name__ == '__main__':
+    main()
