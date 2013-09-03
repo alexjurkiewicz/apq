@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import sys, subprocess, argparse, re
+import sys, subprocess, argparse, re, time
 
 def parse_mq():
     try:
@@ -18,7 +18,7 @@ def parse_mq():
             curmsg = s[0].rstrip('*')
             msgs[curmsg] = {
                 'size': s[1],
-                'date': ' '.join(s[2:6]),
+                'date': parse_mailq_date(' '.join(s[2:6])),
                 'sender': s[-1],
                 'reason': '',
                 }
@@ -30,6 +30,13 @@ def parse_mq():
             print "Unknown line: %s" % line
             sys.exit(1)
     return msgs
+
+def parse_mailq_date(d):
+    '''time.strptime defaults to a year of 1900. Try the current year but check this doesn't create a date in the future (eg if you run this on Jan 1 and there are things in the queue from Dec)'''
+    t = time.strptime(d + ' ' + time.strftime('%Y'), '%a %b %d %H:%M:%S %Y')
+    if t > time.localtime():
+        t = time.strptime(d + ' ' + str(int(time.strftime('%Y')-1)), '%a %b %d %H:%M:%S %Y')
+    return t
 
 def filter_msgs(msgs, reason=None, sender=None, recipient=None, size=None):
     def filter_on_msg_key(msgs, pattern, key):
@@ -45,19 +52,26 @@ def filter_msgs(msgs, reason=None, sender=None, recipient=None, size=None):
         msgs = filter_on_msg_key(msgs, recipient, 'recipient')
     return msgs
 
+def format_msgs_for_output(msgs):
+    '''Format msgs for output. Currently replaces time_struct dates with a string'''
+    for msgid in msgs:
+        msgs[msgid]['date'] = time.strftime('%Y-%m-%d %H:%M:%S', msgs[msgid]['date'])
+    return msgs
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Parse postfix mail queue data')
-    parser.add_argument('-j', '--json', action='store_true', help="JSON output")
+    parser = argparse.ArgumentParser(description='Parse postfix mail queue.')
     parser.add_argument('-y', '--yaml', action='store_true', help="YAML output (default)")
+    parser.add_argument('-j', '--json', action='store_true', help="JSON output")
     parser.add_argument('-c', '--count', action='store_true', help="Return only the count of matching items")
-    parser.add_argument('--reason', default=None, help="Return only messages with a reason matching this regex pattern")
-    parser.add_argument('--recipient', default=None, help="Return only messages with a recipient matching this regex pattern")
-    parser.add_argument('--sender', default=None, help="Return only messages with a sender matching this regex pattern")
+    parser.add_argument('--reason', default=None, help="Select messages with a reason matching this regex")
+    parser.add_argument('--recipient', default=None, help="Select messages with a recipient matching this regex")
+    parser.add_argument('--sender', default=None, help="Select messages with a sender matching this regex")
+
     args = parser.parse_args()
 
     msgs = parse_mq()
     msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender)
+    msgs = format_msgs_for_output(msgs)
 
     if args.count:
         print len(msgs)
