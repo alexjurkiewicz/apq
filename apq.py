@@ -31,6 +31,40 @@ def parse_mq():
             sys.exit(1)
     return msgs
 
+def parse_ml():
+    lines = 0
+    msgs = {}
+    with open('/var/log/mail.log', 'rb') as f:
+        for line in f.readlines():
+            lines += 1
+            if lines % 100000 == 0:
+                # Technically off by one
+                print "Processed %s lines..." % lines
+            try:
+                l = line.strip().split()
+                if l[4].startswith('postfix/smtpd') and l[6].startswith('client='):
+                    curmsg = l[5].rstrip(':')
+                    msgs[curmsg] = {
+                        'source_ip': l[6].rsplit('[')[-1].rstrip(']'),
+                    }
+                elif l[4].startswith('postfix/cleanup') and l[6].startswith('message-id='):
+                    curmsg = l[5].rstrip(':')
+                    if curmsg in msgs:
+                        msgs[curmsg]['message-id'] = l[6].split('<', 1)[1][:-1]
+                elif l[4].startswith('postfix/qmgr') and l[6].startswith('from='):
+                    curmsg = l[5].rstrip(':')
+                    if curmsg in msgs:
+                        msgs[curmsg]['sender'] = l[6].split('<', 1)[1].rsplit('>')[0]
+                elif l[4].startswith('postfix/smtp[') and any([i.startswith('status=') for i in l]):
+                    curmsg = l[5].rstrip(':')
+                    if curmsg in msgs:
+                        status_field = filter(lambda i:i.startswith('status='), l)[0]
+                        status = status_field.split('=')[1]
+                        msgs[curmsg]['latest-delivery-status'] = status
+            except:
+                print "Warning: could not parse log line: %s" % repr(line)
+    print len(msgs)
+
 def parse_mailq_date(d):
     '''Parse a date in mailq's format and return a UNIX time'''
     # time.strptime defaults to a year of 1900. Try the current year but check this doesn't create a date in the future (eg if you run this on Jan 1 and there are things in the queue from Dec)
@@ -94,6 +128,7 @@ def main():
     parser.add_argument('-j', '--json', action='store_true', help="JSON output (default)")
     parser.add_argument('-y', '--yaml', action='store_true', help="YAML output")
     parser.add_argument('-c', '--count', action='store_true', help="Return only the count of matching items")
+    parser.add_argument('--log', action='store_true', help="Experimental: Search /var/log/mail.log as well.")
     parser.add_argument('--reason', default=None, help="Select messages with a reason matching this regex")
     parser.add_argument('--recipient', default=None, help="Select messages with a recipient matching this regex")
     parser.add_argument('--sender', default=None, help="Select messages with a sender matching this regex")
@@ -116,9 +151,13 @@ def main():
         sys.exit(1)
 
     # Do
-    msgs = parse_mq()
-    msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender, minage=args.minage, maxage=args.maxage)
-    msgs = format_msgs_for_output(msgs)
+    if args.log:
+        parse_ml()
+        sys.exit(0)
+    else:
+        msgs = parse_mq()
+        msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender, minage=args.minage, maxage=args.maxage)
+        msgs = format_msgs_for_output(msgs)
 
     # Output
     if args.count:
