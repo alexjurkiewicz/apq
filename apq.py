@@ -1,10 +1,16 @@
 #!/usr/bin/env python
 
-import sys, subprocess, argparse, re, time, datetime
+import sys, subprocess, re, time, datetime
+try:
+    import argparse
+except:
+    print "Can't import 'argparse'. Try installing python-argparse."
+    sys.exit(1)
 
 def parse_mq():
     try:
-        mqstdout = subprocess.check_output('mailq')
+        # subprocess.check_output is py2.7+ only
+        mqstdout = subprocess.Popen(['mailq'], stdout=subprocess.PIPE).communicate()[0]
     except subprocess.CalledProcessError:
         print "Could not run mailq!"
         sys.exit(1)
@@ -163,7 +169,11 @@ def main():
     if args.count:
         print len(msgs)
     elif args.yaml:
-        import yaml
+        try:
+            import yaml
+        except ImportError:
+            print "Can't import 'yaml'. Try installing python-yaml."
+            sys.exit(1)
         print yaml.dump(msgs)
     else:
         import json
