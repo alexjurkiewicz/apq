@@ -94,7 +94,7 @@ def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, max
 
 def filter_on_msg_key(msgs, pattern, key):
     '''Filter msgs, returning only items where key 'key' matches regex 'pattern'.'''
-    r = re.compile(pattern)
+    r = re.compile(pattern, re.IGNORECASE)
     msg_ids = filter(lambda m: re.search(r, msgs[m][key]), msgs)
     msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
     return msgs
