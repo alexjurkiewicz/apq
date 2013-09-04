@@ -56,7 +56,7 @@ def parse_ml():
                 elif l[4].startswith('postfix/cleanup') and l[6].startswith('message-id='):
                     curmsg = l[5].rstrip(':')
                     if curmsg in msgs:
-                        msgs[curmsg]['message-id'] = l[6].split('<', 1)[1][:-1]
+                        msgs[curmsg]['message-id'] = l[6].split('=', 1)[1]
                 elif l[4].startswith('postfix/qmgr') and l[6].startswith('from='):
                     curmsg = l[5].rstrip(':')
                     if curmsg in msgs:
