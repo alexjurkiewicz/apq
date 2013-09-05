@@ -51,7 +51,7 @@ def parse_ml():
             lines += 1
             if lines % 100000 == 0:
                 # Technically off by one
-                print "Processed %s lines..." % lines
+                print "Processed %s lines (%s messages)..." % (lines, len(msgs))
             try:
                 l = line.strip().split()
                 if l[4].startswith('postfix/smtpd') and l[6].startswith('client='):
@@ -81,7 +81,7 @@ def parse_ml():
                         msgs[curmsg]['delivery-status'] = status
             except:
                 print "Warning: could not parse log line: %s" % repr(line)
-    print "Processed %s lines..." % lines
+    print "Processed %s lines (%s messages)..." % (lines, len(msgs))
     return msgs
 
 def parse_mailq_date(d):
