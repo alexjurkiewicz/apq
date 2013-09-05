@@ -56,14 +56,19 @@ def parse_ml():
                 l = line.strip().split()
                 if l[4].startswith('postfix/smtpd') and l[6].startswith('client='):
                     curmsg = l[5].rstrip(':')
-                    msgs[curmsg] = {
-                        'source_ip': l[6].rsplit('[')[-1].rstrip(']'),
-                        'date': parse_syslog_date(' '.join(l[0:3])),
-                    }
-                elif l[4].startswith('postfix/cleanup') and l[6].startswith('message-id='):
+                    if curmsg not in msgs:
+                        msgs[curmsg] = {
+                            'source_ip': l[6].rsplit('[')[-1].rstrip(']'),
+                            'date': parse_syslog_date(' '.join(l[0:3])),
+                        }
+                elif False and l[4].startswith('postfix/cleanup') and l[6].startswith('message-id='): # dont want msgid right now
                     curmsg = l[5].rstrip(':')
                     if curmsg in msgs:
-                        msgs[curmsg]['message-id'] = l[6].split('=', 1)[1]
+                        msgid = l[6].split('=', 1)[1]
+                        if msgid[0] == '<' and msgid[-1] == '>':
+                            # Not all message-ids are wrapped in < brackets >
+                            msgid = msgid[1:-1]
+                        msgs[curmsg]['message-id'] = msgid
                 elif l[4].startswith('postfix/qmgr') and l[6].startswith('from='):
                     curmsg = l[5].rstrip(':')
                     if curmsg in msgs:
@@ -73,14 +78,14 @@ def parse_ml():
                     if curmsg in msgs:
                         status_field = filter(lambda i:i.startswith('status='), l)[0]
                         status = status_field.split('=')[1]
-                        msgs[curmsg]['latest-delivery-status'] = status
+                        msgs[curmsg]['delivery-status'] = status
             except:
                 print "Warning: could not parse log line: %s" % repr(line)
-    import yaml
-    print yaml.dump(msgs)
+    print "Processed %s lines..." % lines
+    return msgs
 
 def parse_mailq_date(d):
-    '''Parse a date in mailq's format and return a UNIX time'''
+    '''Parse a date in mailq's format (Fri Aug 30 16:47:05) and return a UNIX time'''
     # time.strptime defaults to a year of 1900. Try the current year but check this doesn't create a date in the future (eg if you run this on Jan 1 and there are things in the queue from Dec)
     t = time.strptime(d + ' ' + time.strftime('%Y'), '%a %b %d %H:%M:%S %Y')
     if t > time.localtime():
@@ -88,7 +93,11 @@ def parse_mailq_date(d):
     return time.mktime(t)
 
 def parse_syslog_date(d):
-    pass
+    '''Parse a date in syslog's format (Sep 5 10:30:36) and return a UNIX time'''
+    t = time.strptime(d + ' ' + time.strftime('%Y'), '%b %d %H:%M:%S %Y')
+    if t > time.localtime():
+        t = time.strptime(d + ' ' + str(int(time.strftime('%Y')-1)), '%b %d %H:%M:%S %Y')
+    return time.mktime(t)
 
 def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, maxage=None):
     if reason:
@@ -168,13 +177,12 @@ def main():
         sys.exit(1)
 
     # Do
+    msgs = {}
     if args.log:
-        parse_ml()
-        sys.exit(0)
-    else:
-        msgs = parse_mq()
-        msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender, minage=args.minage, maxage=args.maxage)
-        msgs = format_msgs_for_output(msgs)
+        msgs.update(parse_ml())
+    msgs.update(parse_mq())
+    msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender, minage=args.minage, maxage=args.maxage)
+    msgs = format_msgs_for_output(msgs)
 
     # Output
     if args.count:
