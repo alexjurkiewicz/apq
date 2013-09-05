@@ -21,12 +21,18 @@ def parse_mq():
             continue
         if line[0] in '0123456789ABCDEF':
             s = line.strip().split()
-            curmsg = s[0].rstrip('*')
+            curmsg = s[0]
+            if curmsg[-1] == '*':
+                status = 'active'
+                curmsg = curmsg[:-1]
+            else:
+                status = 'deferred'
             msgs[curmsg] = {
                 'size': s[1],
                 'date': parse_mailq_date(' '.join(s[2:6])),
                 'sender': s[-1],
                 'reason': '',
+                'status': status,
                 }
         elif line.strip()[0] == '(':
             msgs[curmsg]['reason'] = line.strip()[1:-1].replace('\n', ' ')
