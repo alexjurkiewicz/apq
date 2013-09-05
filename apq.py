@@ -52,6 +52,7 @@ def parse_ml():
                     curmsg = l[5].rstrip(':')
                     msgs[curmsg] = {
                         'source_ip': l[6].rsplit('[')[-1].rstrip(']'),
+                        'date': parse_syslog_date(' '.join(l[0:3])),
                     }
                 elif l[4].startswith('postfix/cleanup') and l[6].startswith('message-id='):
                     curmsg = l[5].rstrip(':')
@@ -69,7 +70,8 @@ def parse_ml():
                         msgs[curmsg]['latest-delivery-status'] = status
             except:
                 print "Warning: could not parse log line: %s" % repr(line)
-    print len(msgs)
+    import yaml
+    print yaml.dump(msgs)
 
 def parse_mailq_date(d):
     '''Parse a date in mailq's format and return a UNIX time'''
@@ -78,6 +80,9 @@ def parse_mailq_date(d):
     if t > time.localtime():
         t = time.strptime(d + ' ' + str(int(time.strftime('%Y')-1)), '%a %b %d %H:%M:%S %Y')
     return time.mktime(t)
+
+def parse_syslog_date(d):
+    pass
 
 def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, maxage=None):
     if reason:
