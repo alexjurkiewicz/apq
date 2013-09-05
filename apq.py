@@ -4,7 +4,7 @@ import sys, subprocess, re, time, datetime
 try:
     import argparse
 except:
-    print "Can't import 'argparse'. Try installing python-argparse."
+    print >> sys.stderr, "Error: Can't import 'argparse'. Try installing python-argparse."
     sys.exit(1)
 
 def parse_mq():
@@ -15,7 +15,7 @@ def parse_mq():
         # subprocess.check_output is py2.7+ only
         mqstdout = subprocess.Popen(['mailq'], stdout=subprocess.PIPE).communicate()[0]
     except subprocess.CalledProcessError:
-        print "Could not run mailq!"
+        print >> sys.stderr, "Error: Could not run mailq!"
         sys.exit(1)
     curmsg = None
     msgs = {}
@@ -42,7 +42,7 @@ def parse_mq():
         elif '@' in line: # pretty dumb check, I know
             msgs[curmsg]['recipient'] = line.strip()
         else:
-            print "Unknown line: %s" % line
+            print >> sys.stderr, "Error: Unknown line in mailq output: %s" % line
             sys.exit(1)
     return msgs
 
@@ -54,7 +54,7 @@ def parse_ml():
             lines += 1
             if lines % 100000 == 0:
                 # Technically off by one
-                print "Processed %s lines (%s messages)..." % (lines, len(msgs))
+                print >> sys.stderr, "Processed %s lines (%s messages)..." % (lines, len(msgs))
             try:
                 l = line.strip().split()
                 if l[4].startswith('postfix/smtpd') and l[6].startswith('client='):
@@ -83,8 +83,8 @@ def parse_ml():
                         status = status_field.split('=')[1]
                         msgs[curmsg]['delivery-status'] = status
             except:
-                print "Warning: could not parse log line: %s" % repr(line)
-    print "Processed %s lines (%s messages)..." % (lines, len(msgs))
+                print >> sys.stderr, "Warning: could not parse log line: %s" % repr(line)
+    print >> sys.stderr, "Processed %s lines (%s messages)..." % (lines, len(msgs))
     return msgs
 
 def parse_mailq_date(d):
@@ -179,15 +179,15 @@ def main():
     if args.minage and args.minage[-1].isdigit():
         args.minage += 's'
     if args.minage and args.minage[-1] not in 'smhd':
-        print "--minage format is incorrect. Examples: 1800s, 30m"
+        print >> sys.stderr, "Error: --minage format is incorrect. Examples: 1800s, 30m"
         sys.exit(1)
     if args.maxage and args.maxage[-1].isdigit():
         args.maxage += 's'
     if args.maxage and args.maxage[-1] not in 'smhd':
-        print "--maxage format is incorrect. Examples: 1800s, 30m"
+        print >> sys.stderr, "Error: --maxage format is incorrect. Examples: 1800s, 30m"
         sys.exit(1)
     if args.exclude_active and args.only_active:
-        print "--exclude-active and --only-active are mutually exclusive"
+        print >> sys.stderr, "Error: --exclude-active and --only-active are mutually exclusive"
         sys.exit(1)
 
     # Do
@@ -205,7 +205,7 @@ def main():
         try:
             import yaml
         except ImportError:
-            print "Can't import 'yaml'. Try installing python-yaml."
+            print >> sys.stderr, "Error: Can't import 'yaml'. Try installing python-yaml."
             sys.exit(1)
         print yaml.dump(msgs)
     else:
