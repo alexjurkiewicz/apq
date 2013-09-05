@@ -8,6 +8,9 @@ except:
     sys.exit(1)
 
 def parse_mq():
+    '''
+    Parse mailq output and return data as a dict.
+    '''
     try:
         # subprocess.check_output is py2.7+ only
         mqstdout = subprocess.Popen(['mailq'], stdout=subprocess.PIPE).communicate()[0]
@@ -99,7 +102,7 @@ def parse_syslog_date(d):
         t = time.strptime(d + ' ' + str(int(time.strftime('%Y')-1)), '%b %d %H:%M:%S %Y')
     return time.mktime(t)
 
-def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, maxage=None):
+def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, maxage=None, exclude_active=False, only_active=False):
     if reason:
         msgs = filter_on_msg_key(msgs, reason, 'reason')
     if sender:
@@ -110,6 +113,12 @@ def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, max
         msgs = filter_on_msg_age(msgs, 'minage', minage)
     if maxage:
         msgs = filter_on_msg_age(msgs, 'maxage', maxage)
+    if exclude_active or only_active:
+        msg_ids = filter(lambda m: 'status' in msgs[m] and msgs[m]['status'] != 'active', msgs)
+        if exclude_active:
+            msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
+        else: # only_active
+            msgs = dict((k, v) for k,v in msgs.iteritems() if k not in msg_ids)
     return msgs
 
 def filter_on_msg_key(msgs, pattern, key):
@@ -160,6 +169,8 @@ def main():
     parser.add_argument('--sender', default=None, help="Select messages with a sender matching this regex")
     parser.add_argument('--maxage', default=None, help="Select messages younger than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: '3600', '1h'")
     parser.add_argument('--minage', default=None, help="Select messages older than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: '3600', '1h'")
+    parser.add_argument('--exclude-active', action='store_true', help="Exclude items in the queue that are active")
+    parser.add_argument('--only-active', action='store_true', help="Only include items in the queue that are active")
 
     # Parse
     args = parser.parse_args()
@@ -175,13 +186,16 @@ def main():
     if args.maxage and args.maxage[-1] not in 'smhd':
         print "--maxage format is incorrect. Examples: 1800s, 30m"
         sys.exit(1)
+    if args.exclude_active and args.only_active:
+        print "--exclude-active and --only-active are mutually exclusive"
+        sys.exit(1)
 
     # Do
     msgs = {}
     if args.log:
         msgs.update(parse_ml())
     msgs.update(parse_mq())
-    msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender, minage=args.minage, maxage=args.maxage)
+    msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender, minage=args.minage, maxage=args.maxage, exclude_active=args.exclude_active, only_active=args.only_active)
     msgs = format_msgs_for_output(msgs)
 
     # Output
