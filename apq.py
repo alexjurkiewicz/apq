@@ -188,7 +188,7 @@ def main():
         print yaml.dump(msgs)
     else:
         import json
-        print json.dumps(msgs)
+        print json.dumps(msgs, indent=4)
 
 if __name__ == '__main__':
     main()
