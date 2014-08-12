@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+'''
+Parse Postfix mailq and return a filtered list as JSON
+'''
+
 import sys, subprocess, re, time, datetime
 try:
     import argparse
@@ -47,6 +51,9 @@ def parse_mq():
     return msgs
 
 def parse_ml():
+    '''
+    Read and parse messages from /var/log/mail.log
+    '''
     lines = 0
     msgs = {}
     with open('/var/log/mail.log', 'rb') as f:
@@ -82,7 +89,7 @@ def parse_ml():
                         status_field = [i for i in l if i.startswith('status=')][0]
                         status = status_field.split('=')[1]
                         msgs[curmsg]['delivery-status'] = status
-            except Exception:
+            except StandardError:
                 print >> sys.stderr, "Warning: could not parse log line: %s" % repr(line)
     print >> sys.stderr, "Processed %s lines (%s messages)..." % (lines, len(msgs))
     return msgs
@@ -103,6 +110,9 @@ def parse_syslog_date(d):
     return time.mktime(t)
 
 def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, maxage=None, exclude_active=False, only_active=False):
+    '''
+    Dispatch function to perform all requested filtering conditions.
+    '''
     if reason:
         msgs = filter_on_msg_key(msgs, reason, 'reason')
     if sender:
@@ -159,6 +169,9 @@ def format_msgs_for_output(msgs):
     return msgs
 
 def main():
+    '''
+    Main function
+    '''
     parser = argparse.ArgumentParser(description='Parse postfix mail queue.')
     parser.add_argument('-j', '--json', action='store_true', help="JSON output (default)")
     parser.add_argument('-y', '--yaml', action='store_true', help="YAML output")
