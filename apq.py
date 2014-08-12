@@ -3,7 +3,7 @@
 import sys, subprocess, re, time, datetime
 try:
     import argparse
-except:
+except ImportError:
     print >> sys.stderr, "Error: Can't import 'argparse'. Try installing python-argparse."
     sys.exit(1)
 
@@ -79,10 +79,10 @@ def parse_ml():
                 elif l[4].startswith('postfix/smtp[') and any([i.startswith('status=') for i in l]):
                     curmsg = l[5].rstrip(':')
                     if curmsg in msgs:
-                        status_field = filter(lambda i:i.startswith('status='), l)[0]
+                        status_field = [i for i in l if i.startswith('status=')][0]
                         status = status_field.split('=')[1]
                         msgs[curmsg]['delivery-status'] = status
-            except:
+            except Exception:
                 print >> sys.stderr, "Warning: could not parse log line: %s" % repr(line)
     print >> sys.stderr, "Processed %s lines (%s messages)..." % (lines, len(msgs))
     return msgs
@@ -114,18 +114,18 @@ def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, max
     if maxage:
         msgs = filter_on_msg_age(msgs, 'maxage', maxage)
     if exclude_active or only_active:
-        msg_ids = filter(lambda m: 'status' in msgs[m] and msgs[m]['status'] != 'active', msgs)
+        msg_ids = [m for m in msgs if 'status' in msgs[m] and msgs[m]['status'] != 'active']
         if exclude_active:
-            msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
+            msgs = dict((k, v) for k, v in msgs.iteritems() if k in msg_ids)
         else: # only_active
-            msgs = dict((k, v) for k,v in msgs.iteritems() if k not in msg_ids)
+            msgs = dict((k, v) for k, v in msgs.iteritems() if k not in msg_ids)
     return msgs
 
 def filter_on_msg_key(msgs, pattern, key):
     '''Filter msgs, returning only items where key 'key' matches regex 'pattern'.'''
     r = re.compile(pattern, re.IGNORECASE)
-    msg_ids = filter(lambda m: re.search(r, msgs[m][key]), msgs)
-    msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
+    msg_ids = [m for m in msgs if re.search(r, msgs[m][key])]
+    msgs = dict((k, v) for k, v in msgs.iteritems() if k in msg_ids)
     return msgs
 
 def filter_on_msg_age(msgs, condition, age):
@@ -148,8 +148,8 @@ def filter_on_msg_age(msgs, condition, age):
     else:
         assert False
     # Filter
-    msg_ids = filter(f, msgs)
-    msgs = dict((k, v) for k,v in msgs.iteritems() if k in msg_ids)
+    msg_ids = [msg for msg in msgs if f(msg)]
+    msgs = dict((k, v) for k, v in msgs.iteritems() if k in msg_ids)
     return msgs
 
 def format_msgs_for_output(msgs):
