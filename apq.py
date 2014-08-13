@@ -15,15 +15,14 @@ def parse_mq():
     '''
     Parse mailq output and return data as a dict.
     '''
-    try:
-        # subprocess.check_output is py2.7+ only
-        mqstdout = subprocess.Popen(['mailq'], stdout=subprocess.PIPE).communicate()[0]
-    except subprocess.CalledProcessError:
-        print >> sys.stderr, "Error: Could not run mailq!"
-        sys.exit(1)
+    cmd = subprocess.Popen(['mailq'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = cmd.communicate()
+    # 69 == postqueue: fatal: Queue report unavailable - mail system is down
+    if cmd.returncode not in (0, 69):
+        print >>sys.stderr, 'Error: mailq failed: "{}"'.format(stderr.strip())
     curmsg = None
     msgs = {}
-    for line in mqstdout.strip().split('\n'):
+    for line in stdout.strip().split('\n'):
         if not line or line.startswith('-Queue ID-') or line.startswith('--'):
             continue
         if line[0] in '0123456789ABCDEF':
