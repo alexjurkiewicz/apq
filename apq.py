@@ -108,28 +108,6 @@ def parse_syslog_date(d):
         t = time.strptime(d + ' ' + str(int(time.strftime('%Y')-1)), '%b %d %H:%M:%S %Y')
     return time.mktime(t)
 
-def filter_msgs(msgs, reason=None, sender=None, recipient=None, minage=None, maxage=None, exclude_active=False, only_active=False):
-    '''
-    Dispatch function to perform all requested filtering conditions.
-    '''
-    if reason:
-        msgs = filter_on_msg_key(msgs, reason, 'reason')
-    if sender:
-        msgs = filter_on_msg_key(msgs, sender, 'sender')
-    if recipient:
-        msgs = filter_on_msg_key(msgs, recipient, 'recipient')
-    if minage:
-        msgs = filter_on_msg_age(msgs, 'minage', minage)
-    if maxage:
-        msgs = filter_on_msg_age(msgs, 'maxage', maxage)
-    if exclude_active or only_active:
-        msg_ids = [m for m in msgs if 'status' in msgs[m] and msgs[m]['status'] != 'active']
-        if exclude_active:
-            msgs = dict((k, v) for k, v in msgs.iteritems() if k in msg_ids)
-        else: # only_active
-            msgs = dict((k, v) for k, v in msgs.iteritems() if k not in msg_ids)
-    return msgs
-
 def filter_on_msg_key(msgs, pattern, key):
     '''Filter msgs, returning only items where key 'key' matches regex 'pattern'.'''
     r = re.compile(pattern, re.IGNORECASE)
@@ -167,9 +145,9 @@ def format_msgs_for_output(msgs):
         msgs[msgid]['date'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(msgs[msgid]['date']))
     return msgs
 
-def main():
+def parse_args():
     '''
-    Main function
+    Parse commandline arguments
     '''
     parser = argparse.ArgumentParser(description='Parse postfix mail queue.')
     parser.add_argument('-j', '--json', action='store_true', help="JSON output (default)")
@@ -184,33 +162,28 @@ def main():
     parser.add_argument('--exclude-active', action='store_true', help="Exclude items in the queue that are active")
     parser.add_argument('--only-active', action='store_true', help="Only include items in the queue that are active")
 
-    # Parse
     args = parser.parse_args()
 
-    # Validate
     if args.minage and args.minage[-1].isdigit():
         args.minage += 's'
-    if args.minage and args.minage[-1] not in 'smhd':
+    elif args.minage and args.minage[-1] not in 'smhd':
         print >> sys.stderr, "Error: --minage format is incorrect. Examples: 1800s, 30m"
         sys.exit(1)
     if args.maxage and args.maxage[-1].isdigit():
         args.maxage += 's'
-    if args.maxage and args.maxage[-1] not in 'smhd':
+    elif args.maxage and args.maxage[-1] not in 'smhd':
         print >> sys.stderr, "Error: --maxage format is incorrect. Examples: 1800s, 30m"
         sys.exit(1)
     if args.exclude_active and args.only_active:
         print >> sys.stderr, "Error: --exclude-active and --only-active are mutually exclusive"
         sys.exit(1)
 
-    # Do
-    msgs = {}
-    if args.log:
-        msgs.update(parse_ml())
-    msgs.update(parse_mq())
-    msgs = filter_msgs(msgs, reason=args.reason, recipient=args.recipient, sender=args.sender, minage=args.minage, maxage=args.maxage, exclude_active=args.exclude_active, only_active=args.only_active)
-    msgs = format_msgs_for_output(msgs)
+    return args
 
-    # Output
+def output_msgs(args, msgs):
+    '''
+    Take msgs and format it as requested.
+    '''
     if args.count:
         print len(msgs)
     elif args.yaml:
@@ -223,6 +196,38 @@ def main():
     else:
         import json
         print json.dumps(msgs, indent=4)
+
+
+def main():
+    '''
+    Main function
+    '''
+    args = parse_args()
+
+    # Do
+    msgs = {}
+    if args.log:
+        msgs.update(parse_ml())
+    msgs.update(parse_mq())
+    if args.reason:
+        msgs = filter_on_msg_key(msgs, args.reason, 'reason')
+    if args.sender:
+        msgs = filter_on_msg_key(msgs, args.sender, 'sender')
+    if args.recipient:
+        msgs = filter_on_msg_key(msgs, args.recipient, 'recipient')
+    if args.minage:
+        msgs = filter_on_msg_age(msgs, 'minage', args.minage)
+    if args.maxage:
+        msgs = filter_on_msg_age(msgs, 'maxage', args.maxage)
+    if args.exclude_active or args.only_active:
+        msg_ids = [m for m in msgs if 'status' in msgs[m] and msgs[m]['status'] != 'active']
+        if args.exclude_active:
+            msgs = dict((k, v) for k, v in msgs.iteritems() if k in msg_ids)
+        else: # only_active
+            msgs = dict((k, v) for k, v in msgs.iteritems() if k not in msg_ids)
+    msgs = format_msgs_for_output(msgs)
+
+    output_msgs(args, msgs)
 
 if __name__ == '__main__':
     main()
