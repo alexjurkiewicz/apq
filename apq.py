@@ -8,25 +8,38 @@ import sys, subprocess, re, time, datetime
 try:
     import argparse
 except ImportError:
-    print >> sys.stderr, "Error: Can't import 'argparse'. Try installing python-argparse."
+    print >> sys.stderr, 'Error: Can\'t import argparse. Try installing python-argparse.'
     sys.exit(1)
 
-def parse_mq():
+MONTH_MAP = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+UNIX_EPOCH = datetime.datetime(1970,1,1)
+
+def call_mailq(args):
+    '''
+    Call mailq and return stdout as a string
+    '''
+    if not args.mailq_data:
+        cmd = subprocess.Popen(['mailq'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = cmd.communicate()
+        if cmd.returncode not in (0, 69):
+            print >>sys.stderr, 'Error: mailq failed: "{}"'.format(stderr.strip())
+    else:
+        with open(args.mailq_data, 'r') as f:
+            stdout = f.read()
+    return stdout.strip()
+
+def parse_mq(args):
     '''
     Parse mailq output and return data as a dict.
     '''
-    cmd = subprocess.Popen(['mailq'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout, stderr = cmd.communicate()
-    # 69 == postqueue: fatal: Queue report unavailable - mail system is down
-    if cmd.returncode not in (0, 69):
-        print >>sys.stderr, 'Error: mailq failed: "{}"'.format(stderr.strip())
+    mailq_stdout = call_mailq(args)
     curmsg = None
     msgs = {}
-    for line in stdout.strip().split('\n'):
-        if not line or line.startswith('-Queue ID-') or line.startswith('--'):
+    for line in mailq_stdout.splitlines():
+        if not line or line[:10] == '-Queue ID-' or line[:2] == '--':
             continue
         if line[0] in '0123456789ABCDEF':
-            s = line.strip().split()
+            s = line.split()
             curmsg = s[0]
             if curmsg[-1] == '*':
                 status = 'active'
@@ -35,23 +48,24 @@ def parse_mq():
                 status = 'deferred'
             msgs[curmsg] = {
                 'size': s[1],
-                'date': parse_mailq_date(' '.join(s[2:6])),
+                'rawdate': ' '.join(s[2:6]),
                 'sender': s[-1],
                 'reason': '',
                 'status': status,
                 }
-        elif line.strip()[0] == '(':
-            msgs[curmsg]['reason'] = line.strip()[1:-1].replace('\n', ' ')
-        elif '@' in line: # pretty dumb check, I know
+        elif '@' in line: # XXX: pretty dumb check
             msgs[curmsg]['recipient'] = line.strip()
+        elif line.lstrip(' ')[0] == '(':
+            msgs[curmsg]['reason'] = line.strip()[1:-1].replace('\n', ' ')
         else:
-            print >> sys.stderr, "Error: Unknown line in mailq output: %s" % line
+            print >> sys.stderr, 'Error: Unknown line in mailq output: %s' % line
             sys.exit(1)
     return msgs
 
 def parse_ml():
     '''
     Read and parse messages from /var/log/mail.log
+    XXX: can be optimised as per parse_mq
     '''
     lines = 0
     msgs = {}
@@ -60,17 +74,17 @@ def parse_ml():
             lines += 1
             if lines % 100000 == 0:
                 # Technically off by one
-                print >> sys.stderr, "Processed %s lines (%s messages)..." % (lines, len(msgs))
+                print >> sys.stderr, 'Processed %s lines (%s messages)...' % (lines, len(msgs))
             try:
                 l = line.strip().split()
-                if l[4].startswith('postfix/smtpd') and l[6].startswith('client='):
+                if l[4][:13] == 'postfix/smtpd' and l[6][:7] == 'client=':
                     curmsg = l[5].rstrip(':')
                     if curmsg not in msgs:
                         msgs[curmsg] = {
                             'source_ip': l[6].rsplit('[')[-1].rstrip(']'),
                             'date': parse_syslog_date(' '.join(l[0:3])),
                         }
-                elif False and l[4].startswith('postfix/cleanup') and l[6].startswith('message-id='): # dont want msgid right now
+                elif False and l[4][:15] == 'postfix/cleanup' and l[6][:11] == 'message-id=': # dont want msgid right now
                     curmsg = l[5].rstrip(':')
                     if curmsg in msgs:
                         msgid = l[6].split('=', 1)[1]
@@ -78,46 +92,58 @@ def parse_ml():
                             # Not all message-ids are wrapped in < brackets >
                             msgid = msgid[1:-1]
                         msgs[curmsg]['message-id'] = msgid
-                elif l[4].startswith('postfix/qmgr') and l[6].startswith('from='):
+                elif l[4][:12] == 'postfix/qmgr' and l[6][:5] == 'from=':
                     curmsg = l[5].rstrip(':')
                     if curmsg in msgs:
                         msgs[curmsg]['sender'] = l[6].split('<', 1)[1].rsplit('>')[0]
-                elif l[4].startswith('postfix/smtp[') and any([i.startswith('status=') for i in l]):
+                elif l[4][:13] == 'postfix/smtp[' and any([i[:7] == 'status=' for i in l]):
                     curmsg = l[5].rstrip(':')
                     if curmsg in msgs:
-                        status_field = [i for i in l if i.startswith('status=')][0]
+                        status_field = [i for i in l if i[:7] == 'status='][0]
                         status = status_field.split('=')[1]
                         msgs[curmsg]['delivery-status'] = status
             except StandardError:
-                print >> sys.stderr, "Warning: could not parse log line: %s" % repr(line)
-    print >> sys.stderr, "Processed %s lines (%s messages)..." % (lines, len(msgs))
+                print >> sys.stderr, 'Warning: could not parse log line: %s' % repr(line)
+    print >> sys.stderr, 'Processed %s lines (%s messages)...' % (lines, len(msgs))
     return msgs
 
-def parse_mailq_date(d):
-    '''Parse a date in mailq's format (Fri Aug 30 16:47:05) and return a UNIX time'''
-    # time.strptime defaults to a year of 1900. Try the current year but check this doesn't create a date in the future (eg if you run this on Jan 1 and there are things in the queue from Dec)
-    t = time.strptime(d + ' ' + time.strftime('%Y'), '%a %b %d %H:%M:%S %Y')
-    if t > time.localtime():
-        t = time.strptime(d + ' ' + str(int(time.strftime('%Y')-1)), '%a %b %d %H:%M:%S %Y')
-    return time.mktime(t)
+def parse_mailq_date(d, now):
+    '''
+    Convert mailq plain text date string to unix epoch time
+    '''
+    _, mon_str, day, time_str = d.split()
+    hour, minute, second = time_str.split(':')
+    d = datetime.datetime(year=now.year, month=MONTH_MAP[mon_str], day=int(day), hour=int(hour), minute=int(minute), second=int(second))
+    # Catch messages generated "last year" (eg in Dec when you're running apq on Jan 1)
+    if d > now:
+        d = datetime.datetime(year=now.year-1, month=MONTH_MAP[mon_str], day=int(day), hour=int(hour), minute=int(minute), second=int(second))
+    #return float(d.strftime('%s'))
+    return float((d - UNIX_EPOCH).total_seconds())
 
 def parse_syslog_date(d):
-    '''Parse a date in syslog's format (Sep 5 10:30:36) and return a UNIX time'''
+    '''
+    Parse a date in syslog's format (Sep 5 10:30:36) and return a UNIX time
+    XXX: can be optimised as per parse_mailq_date
+    '''
     t = time.strptime(d + ' ' + time.strftime('%Y'), '%b %d %H:%M:%S %Y')
     if t > time.localtime():
         t = time.strptime(d + ' ' + str(int(time.strftime('%Y')-1)), '%b %d %H:%M:%S %Y')
     return time.mktime(t)
 
 def filter_on_msg_key(msgs, pattern, key):
-    '''Filter msgs, returning only items where key 'key' matches regex 'pattern'.'''
-    r = re.compile(pattern, re.IGNORECASE)
-    msg_ids = [m for m in msgs if re.search(r, msgs[m][key])]
-    msgs = dict((k, v) for k, v in msgs.iteritems() if k in msg_ids)
+    '''
+    Filter msgs, returning only ones where 'key' exists and the value matches regex 'pattern'.
+    '''
+    pat = re.compile(pattern, re.IGNORECASE)
+    msgs = dict((msgid, data) for (msgid, data) in msgs.iteritems() if key in data and re.search(pat, data[key]))
     return msgs
 
 def filter_on_msg_age(msgs, condition, age):
-    '''Filter msgs, returning only items where key 'date' meets 'condition' maxage/minage checking against 'age'.'''
-    # Determine mode
+    '''
+    Filter msgs, returning only items where key 'date' meets 'condition' maxage/minage checking against 'age'.
+    '''
+    assert condition in ['minage', 'maxage']
+    # Determine age in seconds
     if age[-1] == 's':
         age_secs = int(age[:-1])
     elif age[-1] == 'm':
@@ -129,18 +155,17 @@ def filter_on_msg_age(msgs, condition, age):
     # Create lambda
     now = datetime.datetime.now()
     if condition == 'minage':
-        f = lambda m: (now - datetime.datetime.fromtimestamp(msgs[m]['date'])).total_seconds() >= age_secs
+        f = lambda d: (now - datetime.datetime.fromtimestamp(d)).total_seconds() >= age_secs
     elif condition == 'maxage':
-        f = lambda m: (now - datetime.datetime.fromtimestamp(msgs[m]['date'])).total_seconds() <= age_secs
-    else:
-        assert False
+        f = lambda d: (now - datetime.datetime.fromtimestamp(d)).total_seconds() <= age_secs
     # Filter
-    msg_ids = [msg for msg in msgs if f(msg)]
-    msgs = dict((k, v) for k, v in msgs.iteritems() if k in msg_ids)
+    msgs = dict((msgid, data) for (msgid, data) in msgs.iteritems() if f(data['date']))
     return msgs
 
 def format_msgs_for_output(msgs):
-    '''Format msgs for output. Currently replaces time_struct dates with a string'''
+    '''
+    Format msgs for output. Currently replaces time_struct dates with a string
+    '''
     for msgid in msgs:
         msgs[msgid]['date'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(msgs[msgid]['date']))
     return msgs
@@ -150,32 +175,33 @@ def parse_args():
     Parse commandline arguments
     '''
     parser = argparse.ArgumentParser(description='Parse postfix mail queue.')
-    parser.add_argument('-j', '--json', action='store_true', help="JSON output (default)")
-    parser.add_argument('-y', '--yaml', action='store_true', help="YAML output")
-    parser.add_argument('-c', '--count', action='store_true', help="Return only the count of matching items")
-    parser.add_argument('--log', action='store_true', help="Experimental: Search /var/log/mail.log as well.")
-    parser.add_argument('--reason', default=None, help="Select messages with a reason matching this regex")
-    parser.add_argument('--recipient', default=None, help="Select messages with a recipient matching this regex")
-    parser.add_argument('--sender', default=None, help="Select messages with a sender matching this regex")
-    parser.add_argument('--maxage', default=None, help="Select messages younger than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: '3600', '1h'")
-    parser.add_argument('--minage', default=None, help="Select messages older than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: '3600', '1h'")
-    parser.add_argument('--exclude-active', action='store_true', help="Exclude items in the queue that are active")
-    parser.add_argument('--only-active', action='store_true', help="Only include items in the queue that are active")
+    parser.add_argument('-j', '--json', action='store_true', help='JSON output (default)')
+    parser.add_argument('-y', '--yaml', action='store_true', help='YAML output')
+    parser.add_argument('-c', '--count', action='store_true', help='Return only the count of matching items')
+    parser.add_argument('--log', action='store_true', help='Experimental: Search /var/log/mail.log as well.')
+    parser.add_argument('--mailq-data', default=None, help='Use this file\'s contents instead of calling mailq')
+    parser.add_argument('--reason', default=None, help='Select messages with a reason matching this regex')
+    parser.add_argument('--recipient', default=None, help='Select messages with a recipient matching this regex')
+    parser.add_argument('--sender', default=None, help='Select messages with a sender matching this regex')
+    parser.add_argument('--maxage', default=None, help='Select messages younger than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: 3600, 1h')
+    parser.add_argument('--minage', default=None, help='Select messages older than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: 3600, 1h')
+    parser.add_argument('--exclude-active', action='store_true', help='Exclude items in the queue that are active')
+    parser.add_argument('--only-active', action='store_true', help='Only include items in the queue that are active')
 
     args = parser.parse_args()
 
     if args.minage and args.minage[-1].isdigit():
         args.minage += 's'
     elif args.minage and args.minage[-1] not in 'smhd':
-        print >> sys.stderr, "Error: --minage format is incorrect. Examples: 1800s, 30m"
+        print >> sys.stderr, 'Error: --minage format is incorrect. Examples: 1800s, 30m'
         sys.exit(1)
     if args.maxage and args.maxage[-1].isdigit():
         args.maxage += 's'
     elif args.maxage and args.maxage[-1] not in 'smhd':
-        print >> sys.stderr, "Error: --maxage format is incorrect. Examples: 1800s, 30m"
+        print >> sys.stderr, 'Error: --maxage format is incorrect. Examples: 1800s, 30m'
         sys.exit(1)
     if args.exclude_active and args.only_active:
-        print >> sys.stderr, "Error: --exclude-active and --only-active are mutually exclusive"
+        print >> sys.stderr, 'Error: --exclude-active and --only-active are mutually exclusive'
         sys.exit(1)
 
     return args
@@ -186,17 +212,26 @@ def output_msgs(args, msgs):
     '''
     if args.count:
         print len(msgs)
-    elif args.yaml:
-        try:
-            import yaml
-        except ImportError:
-            print >> sys.stderr, "Error: Can't import 'yaml'. Try installing python-yaml."
-            sys.exit(1)
-        print yaml.dump(msgs)
     else:
-        import json
-        print json.dumps(msgs, indent=4)
+        msgs = format_msgs_for_output(msgs)
+        if args.yaml:
+            try:
+                import yaml
+            except ImportError:
+                print >> sys.stderr, 'Error: Can\'t import yaml. Try installing python-yaml.'
+                sys.exit(1)
+            print yaml.dump(msgs)
+        else:
+            import json
+            print json.dumps(msgs, indent=2)
 
+def parse_msg_dates(msgs, now):
+    new_msgs = {}
+    for msgid, data in msgs.iteritems():
+        if 'date' not in data:
+            data['date'] = parse_mailq_date(data['rawdate'], now)
+            new_msgs[msgid] = data
+    return new_msgs
 
 def main():
     '''
@@ -204,11 +239,18 @@ def main():
     '''
     args = parse_args()
 
-    # Do
+    # Load messages
     msgs = {}
     if args.log:
         msgs.update(parse_ml())
-    msgs.update(parse_mq())
+    msgs.update(parse_mq(args))
+
+    # Prepare data
+    if args.minage or args.maxage:
+        now = datetime.datetime.now()
+        msgs = parse_msg_dates(msgs, now)
+
+    # Filter messages
     if args.reason:
         msgs = filter_on_msg_key(msgs, args.reason, 'reason')
     if args.sender:
@@ -219,13 +261,10 @@ def main():
         msgs = filter_on_msg_age(msgs, 'minage', args.minage)
     if args.maxage:
         msgs = filter_on_msg_age(msgs, 'maxage', args.maxage)
-    if args.exclude_active or args.only_active:
-        msg_ids = [m for m in msgs if 'status' in msgs[m] and msgs[m]['status'] != 'active']
-        if args.exclude_active:
-            msgs = dict((k, v) for k, v in msgs.iteritems() if k in msg_ids)
-        else: # only_active
-            msgs = dict((k, v) for k, v in msgs.iteritems() if k not in msg_ids)
-    msgs = format_msgs_for_output(msgs)
+    if args.exclude_active:
+        msgs = dict((msgid, data) for (msgid, data) in msgs.iteritems() if data.get('status') != 'active')
+    elif args.only_active:
+        msgs = dict((msgid, data) for (msgid, data) in msgs.iteritems() if data.get('status') == 'active')
 
     output_msgs(args, msgs)
 
