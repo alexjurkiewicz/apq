@@ -184,6 +184,7 @@ def parse_args():
     parser.add_argument('--reason', default=None, help='Select messages with a reason matching this regex')
     parser.add_argument('--recipient', default=None, help='Select messages with a recipient matching this regex')
     parser.add_argument('--sender', default=None, help='Select messages with a sender matching this regex')
+    parser.add_argument('--parse-date', action='store_true', default=None, help='Parse dates into a more machine-readable format (slow) (implied by minage/maxage)')
     parser.add_argument('--maxage', default=None, help='Select messages younger than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: 3600, 1h')
     parser.add_argument('--minage', default=None, help='Select messages older than the given age. Format: age[{d,h,m,s}]. Defaults to seconds. eg: 3600, 1h')
     parser.add_argument('--exclude-active', action='store_true', help='Exclude items in the queue that are active')
@@ -247,7 +248,7 @@ def main():
     msgs.update(parse_mq(args))
 
     # Prepare data
-    if args.minage or args.maxage:
+    if args.parse_date or args.minage or args.maxage:
         now = datetime.datetime.now()
         msgs = parse_msg_dates(msgs, now)
 
