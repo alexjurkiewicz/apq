@@ -230,4 +230,8 @@ def main():
     output_msgs(args, msgs)
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print ''
+        sys.exit(1)
