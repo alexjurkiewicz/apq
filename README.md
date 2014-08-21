@@ -1,7 +1,7 @@
 apq
 ===
 
-Parse Postfix queue into JSON or YAML.
+Parse Postfix mail queue into JSON or YAML.
 
     usage: apq.py [-h] [-j] [-y] [-c] [--log] [--mailq-data MAILQ_DATA]
                   [--reason REASON] [--recipient RECIPIENT] [--sender SENDER]
