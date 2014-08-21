@@ -167,7 +167,8 @@ def format_msgs_for_output(msgs):
     Format msgs for output. Currently replaces time_struct dates with a string
     '''
     for msgid in msgs:
-        msgs[msgid]['date'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(msgs[msgid]['date']))
+        if 'date' in msgs[msgid]:
+            msgs[msgid]['date'] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(msgs[msgid]['date']))
     return msgs
 
 def parse_args():
